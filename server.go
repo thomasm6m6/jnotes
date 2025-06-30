@@ -39,6 +39,10 @@ type IndexResponse struct {
 	Files []FileInfo `json:"files"`
 }
 
+type SaveRequest struct {
+	Text string `json:"text"`
+}
+
 type SaveResponse struct {
 	Status string `json:"status"`
 }
@@ -193,6 +197,19 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Calling handleSave...")
 
 	w.Header().Set("Content-Type", "application/json")
+
+	var req SaveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Errorf("could not decode request: %w", err))
+		return
+	}
+
+	fileName := time.Now().Format("20060102") + ".md"
+	filePath := filepath.Join(DB_PATH, fileName)
+	if err := os.WriteFile(filePath, []byte(req.Text), 0644); err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Errorf("could not write file: %w", err))
+		return
+	}
 
 	if out, err := git("add -A"); err != nil {
 		log.Printf("'git add' failed: %s\n%s", err, out)
