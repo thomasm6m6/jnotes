@@ -17,24 +17,9 @@ textarea.addEventListener("input", () => {
 });
 
 window.addEventListener("load", async function () {
-  try {
-    await fetchIndex(); // Fetch and render the index
-    await loadFile(); // Load the default file
-  } catch (error) {
-    console.error(`error loading file: ${error.message}`);
-  }
-
-  window.addEventListener("popstate", () => {
-    hideIndex();
-  });
-
-  if (location.hash === "#index") {
-    document.getElementById("indexlist").classList.add("show");
-  }
-
+  // Initial setup, and then router takes over.
   window.addEventListener("beforeunload", (e) => {
     if (textarea.value !== originalContent) {
-      // Use sendBeacon for reliability on page unload
       const data = JSON.stringify({ text: textarea.value });
       navigator.sendBeacon("/save", new Blob([data], { type: 'application/json' }));
     }
@@ -45,22 +30,46 @@ window.addEventListener("load", async function () {
   searchInput.addEventListener("input", (e) => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-      fetchIndex(e.target.value);
+      const query = e.target.value;
+      const url = query ? `/#index?q=${encodeURIComponent(query)}` : '/#index';
+      history.replaceState({ page: 'index', query: query }, '', url);
+      router();
     }, 300);
   });
+
+  await router();
 });
 
+window.addEventListener("popstate", router);
+
 function showIndex() {
-  const indexlist = document.getElementById("indexlist");
-  if (!indexlist.classList.contains("show")) {
-    indexlist.classList.add("show");
-    history.pushState({ indexVisible: true }, "", "#index");
-  }
+  if (location.hash.startsWith('#index')) return;
+  history.pushState({ page: 'index' }, "", "#index");
+  router();
 }
 
 function hideIndex() {
   const indexlist = document.getElementById("indexlist");
   indexlist.classList.remove("show");
+}
+
+async function router() {
+  const params = new URLSearchParams(location.search);
+  const note = params.get('note');
+
+  if (location.hash.startsWith('#index')) {
+    document.getElementById("indexlist").classList.add("show");
+    const hashParams = new URLSearchParams(location.hash.substring(location.hash.indexOf('?') + 1));
+    const query = hashParams.get('q') || '';
+    const searchInput = document.getElementById("search-input");
+    if (document.activeElement !== searchInput) {
+        searchInput.value = query;
+    }
+    await fetchIndex(query);
+  } else {
+    hideIndex();
+    await loadFile(note);
+  }
 }
 
 async function fetchIndex(query = "") {
@@ -91,8 +100,9 @@ async function fetchIndex(query = "") {
         if (textarea.value !== originalContent) {
           await submitFile();
         }
-        await loadFile(file.fileName);
-        history.back();
+        const noteUrl = `/?note=${file.fileName}`;
+        history.pushState({ page: 'note', fileName: file.fileName }, '', noteUrl);
+        router();
       });
       ul.appendChild(li);
     }
