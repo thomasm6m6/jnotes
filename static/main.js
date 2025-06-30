@@ -31,6 +31,13 @@ window.addEventListener("load", async function () {
   if (location.hash === "#index") {
     document.getElementById("indexlist").classList.add("show");
   }
+
+  window.addEventListener("beforeunload", (e) => {
+    if (textarea.value !== originalContent) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  });
 });
 
 function showIndex() {
@@ -70,6 +77,11 @@ async function fetchIndex() {
       li.appendChild(previewSpan);
 
       li.addEventListener("click", async () => {
+        if (textarea.value !== originalContent) {
+          if (!confirm("You have unsaved changes. Are you sure?")) {
+            return;
+          }
+        }
         await loadFile(file.fileName);
         history.back();
       });
