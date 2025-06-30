@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -26,8 +27,13 @@ type FileResponse struct {
 	Content  string `json:"content"`
 }
 
+type FileInfo struct {
+	FileName string `json:"fileName"`
+	Preview  string `json:"preview"`
+}
+
 type IndexResponse struct {
-	FileNames []string `json:"fileNames"`
+	Files []FileInfo `json:"files"`
 }
 
 type ErrorResponse struct {
@@ -54,14 +60,45 @@ func handleGetIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := IndexResponse{FileNames: []string{}}
+	fileInfos := []FileInfo{}
+	filemap := make(map[string]bool)
 	re := regexp.MustCompile(`^\d{8}\.md$`)
+
 	for _, file := range files {
 		if re.MatchString(file.Name()) {
 			basename, _ := strings.CutSuffix(file.Name(), ".md")
-			data.FileNames = append(data.FileNames, basename)
+			filemap[basename] = true
+
+			content, err := os.ReadFile(filepath.Join(DB_PATH, file.Name()))
+			if err != nil {
+				// We can ignore errors here and just show an empty preview.
+				content = []byte{}
+			}
+
+			preview := string(content)
+			previewRunes := []rune(preview)
+			// Truncate to 80 runes for the preview
+			if len(previewRunes) > 80 {
+				preview = string(previewRunes[0:80])
+			}
+
+			fileInfos = append(fileInfos, FileInfo{
+				FileName: basename,
+				Preview:  preview,
+			})
 		}
 	}
+
+	today := time.Now().Format("20060102")
+	if _, exists := filemap[today]; !exists {
+		fileInfos = append(fileInfos, FileInfo{FileName: today, Preview: ""})
+	}
+
+	sort.Slice(fileInfos, func(i, j int) bool {
+		return fileInfos[i].FileName > fileInfos[j].FileName
+	})
+
+	data := IndexResponse{Files: fileInfos}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(data)
 }

@@ -12,18 +12,17 @@ body {
 }
 
 #indexlist {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   width: 100%;
-  bottom: 0;
+  height: 100%;
   transform: translateX(-100%);
   z-index: 100;
   padding: 10px;
-  border-right: 1px solid;
-  box-shadow: 0 0 15px rgba(0,0,0,0.5);
   background-color: white;
   overflow-y: auto;
+  box-sizing: border-box;
 }
 
 #indexlist ul {
@@ -40,6 +39,22 @@ body {
 
 #indexlist li:hover {
   background-color: #f0f0f0;
+}
+
+.index-entry-title {
+  font-weight: bold;
+  display: block;
+  margin-bottom: 5px;
+  font-size: 18px;
+}
+
+.index-entry-preview {
+  display: block;
+  color: #555;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
 }
 
 #indexlist.show {

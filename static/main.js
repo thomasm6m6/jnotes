@@ -27,11 +27,25 @@ async function fetchIndex() {
   const ul = document.createElement("ul");
   try {
     const json = await doFetch("/getindex");
-    for (const fileName of json.fileNames) {
+    for (const file of json.files) {
       const li = document.createElement("li");
-      li.textContent = fileName;
+
+      const date = parseDate(file.fileName);
+      const formattedDate = formatDate(date);
+
+      const titleSpan = document.createElement("span");
+      titleSpan.className = "index-entry-title";
+      titleSpan.textContent = formattedDate;
+
+      const previewSpan = document.createElement("small");
+      previewSpan.className = "index-entry-preview";
+      previewSpan.textContent = file.preview;
+
+      li.appendChild(titleSpan);
+      li.appendChild(previewSpan);
+
       li.addEventListener("click", async () => {
-        await loadFile(fileName);
+        await loadFile(file.fileName);
         toggleIndex(); // Hide index after selection
       });
       ul.appendChild(li);
