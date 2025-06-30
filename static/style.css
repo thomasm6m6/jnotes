@@ -94,6 +94,11 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+.unstyled-button.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 
 #header {
   font-size: 20px;

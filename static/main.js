@@ -69,14 +69,20 @@ async function loadFile(fileName) {
 }
 
 async function submitFile() {
+  saveBtn.classList.add("disabled");
   const text = textarea.value;
   try {
     const json = await doFetch("/save", {
       method: "POST",
       body: JSON.stringify({ text }),
     });
+    if (json.status !== "save scheduled") {
+      throw new Error(`Save failed, unexpected status: ${json.status}`);
+    }
   } catch (error) {
     console.error(error.message);
+  } finally {
+    saveBtn.classList.remove("disabled");
   }
 }
 
