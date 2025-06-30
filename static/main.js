@@ -70,6 +70,10 @@ async function loadFile(fileName) {
 
 async function submitFile() {
   saveBtn.classList.add("disabled");
+  const saveIcon = saveBtn.querySelector("i");
+  saveIcon.classList.remove("fa-check");
+  saveIcon.classList.add("fa-spinner", "spinner-anim");
+
   const text = textarea.value;
   try {
     const json = await doFetch("/save", {
@@ -83,6 +87,8 @@ async function submitFile() {
     console.error(error.message);
   } finally {
     saveBtn.classList.remove("disabled");
+    saveIcon.classList.remove("fa-spinner", "spinner-anim");
+    saveIcon.classList.add("fa-check");
   }
 }
 
