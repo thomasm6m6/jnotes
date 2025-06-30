@@ -19,6 +19,9 @@ import (
 
 var (
 	DB_PATH string
+	debounceMu sync.Mutex
+	debounceTimer *time.Timer
+	debounceDelay = 10 * time.Second
 	mu      sync.Mutex
 )
 
@@ -36,6 +39,10 @@ type IndexResponse struct {
 	Files []FileInfo `json:"files"`
 }
 
+type SaveResponse struct {
+	Status string `json:"status"`
+}
+
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
@@ -46,6 +53,46 @@ func init() {
 		log.Fatal(err)
 	}
 	DB_PATH = filepath.Join(wd, "db")
+}
+
+func gitPush() (string, error) {
+	return git("push")
+}
+
+func gitPull() (string, error) {
+	if out, err := git("fetch --dry-run"); err != nil {
+		return out, err
+	} else if len(out) == 0 {
+		return "", nil
+	}
+
+	return git("pull")
+}
+
+func gitSync() {
+	if out, err := gitPull(); err != nil {
+		log.Printf("'git pull' failed: %s\n%s", err, out)
+		return
+	}
+	if out, err := gitPush(); err != nil {
+		log.Printf("'git push' failed: %s\n%s", err, out)
+	}
+}
+
+func debounceSync() {
+	debounceMu.Lock()
+	defer debounceMu.Unlock()
+
+	if debounceTimer != nil {
+		debounceTimer.Stop()
+	}
+
+	debounceTimer = time.AfterFunc(debounceDelay, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		log.Println("running debounced sync...")
+		gitSync()
+	})
 }
 
 func httpError(w http.ResponseWriter, status int, err error) {
@@ -143,29 +190,29 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	fmt.Println("handleSave")
-	fmt.Fprintln(w, "OK")
-	return
+	fmt.Println("Calling handleSave...")
 
-	out, err := git("add -A")
-	if err != nil {
-		fmt.Fprintf(w, "Error with 'git add'\nout: %s\nerr: %s\n", out, err)
+	w.Header().Set("Content-Type", "application/json")
+
+	if out, err := git("add -A"); err != nil {
+		log.Printf("'git add' failed: %s\n%s", err, out)
+		httpError(w, http.StatusInternalServerError,
+			fmt.Errorf("git add error: %s\n%s", err, out))
 		return
 	}
 
-	out, err = git("commit -m automated-update")
-	if err != nil {
-		fmt.Fprintf(w, "Error with 'git commit'\nout: %s\nerr: %s\n", out, err)
-		return
+	if out, err := git("commit -m automated-update"); err != nil {
+		if !strings.Contains(out, "nothing to commit") {
+			log.Printf("'git commit' failed: %s\n%s", err, out)
+			httpError(w, http.StatusInternalServerError,
+				fmt.Errorf("git commit error: %s\n%s", out, err))
+			return
+		}
 	}
 
-	out, err = git("push")
-	if err != nil {
-		fmt.Fprintf(w, "Error with 'git push'\nout: %s\nerr: %s\n", out, err)
-		return
-	}
+	debounceSync()
 
-	fmt.Fprintln(w, "saved")
+	_ = json.NewEncoder(w).Encode(SaveResponse{Status: "save scheduled"})
 }
 
 func git(cmd string) (string, error) {
@@ -194,6 +241,17 @@ func main() {
 
 	fs := http.FileServer(http.Dir("static"))
 	http.Handle("/", fs)
+
+	go func() {
+		ticker := time.NewTicker(300 * time.Second)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			mu.Lock()
+			gitPull()
+			mu.Unlock()
+		}
+	}()
 
 	log.Println("Serving on port 8080...")
 	log.Fatal(http.ListenAndServe(":8080", nil))
