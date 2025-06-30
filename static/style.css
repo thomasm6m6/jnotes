@@ -65,7 +65,7 @@ body {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 10px;
+  padding: 0 10px 10px;
   position: relative;
   overflow-x: hidden;
 }
@@ -78,6 +78,9 @@ body {
   font-size: 24px;
   padding: 10px;
   border-bottom: 1px solid;
+  position: sticky;
+  top: 0;
+  background-color: white;
 }
 
 .unstyled-button {
