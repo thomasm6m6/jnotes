@@ -39,6 +39,15 @@ window.addEventListener("load", async function () {
       navigator.sendBeacon("/save", new Blob([data], { type: 'application/json' }));
     }
   });
+
+  const searchInput = document.getElementById("search-input");
+  let debounceTimer;
+  searchInput.addEventListener("input", (e) => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      fetchIndex(e.target.value);
+    }, 300);
+  });
 });
 
 function showIndex() {
@@ -54,12 +63,13 @@ function hideIndex() {
   indexlist.classList.remove("show");
 }
 
-async function fetchIndex() {
-  const indexListEl = document.getElementById("indexlist");
-  indexListEl.innerHTML = ""; // Clear existing list
+async function fetchIndex(query = "") {
+  const resultsContainer = document.getElementById("results-container");
+  resultsContainer.innerHTML = ""; // Clear existing list
   const ul = document.createElement("ul");
   try {
-    const json = await doFetch("/getindex");
+    const url = query ? `/getindex?q=${encodeURIComponent(query)}` : "/getindex";
+    const json = await doFetch(url);
     for (const file of json.files) {
       const li = document.createElement("li");
 
@@ -86,7 +96,7 @@ async function fetchIndex() {
       });
       ul.appendChild(li);
     }
-    indexListEl.appendChild(ul);
+    resultsContainer.appendChild(ul);
   } catch (error) {
     console.error(`error fetching index: ${error.message}`);
   }

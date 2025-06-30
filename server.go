@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/lithammer/fuzzysearch"
 )
 
 var (
@@ -184,25 +186,64 @@ func handleGetIndex(w http.ResponseWriter, r *http.Request) {
 	cacheMu.RLock()
 	defer cacheMu.RUnlock()
 
+	query := r.URL.Query().Get("q")
 	fileInfos := []FileInfo{}
-	filemap := make(map[string]bool)
 
-	for name, cachedFile := range fileCache {
-		filemap[name] = true
-		fileInfos = append(fileInfos, FileInfo{
-			FileName: name,
-			Preview:  cachedFile.Preview,
+	if query == "" {
+		filemap := make(map[string]bool)
+
+		for name, cachedFile := range fileCache {
+			filemap[name] = true
+			fileInfos = append(fileInfos, FileInfo{
+				FileName: name,
+				Preview:  cachedFile.Preview,
+			})
+		}
+
+		today := time.Now().Format("20060102")
+		if _, exists := filemap[today]; !exists {
+			fileInfos = append(fileInfos, FileInfo{FileName: today, Preview: ""})
+		}
+
+		sort.Slice(fileInfos, func(i, j int) bool {
+			return fileInfos[i].FileName > fileInfos[j].FileName
 		})
-	}
+	} else {
+		type rankedFile struct {
+			FileInfo FileInfo
+			Rank     int
+		}
+		var rankedFiles []rankedFile
 
-	today := time.Now().Format("20060102")
-	if _, exists := filemap[today]; !exists {
-		fileInfos = append(fileInfos, FileInfo{FileName: today, Preview: ""})
-	}
+		for name, cachedFile := range fileCache {
+			// RankMatch on empty string is not useful
+			if cachedFile.Content == "" {
+				continue
+			}
+			rank := fuzzysearch.RankMatch(query, cachedFile.Content)
+			if rank != -1 {
+				rankedFiles = append(rankedFiles, rankedFile{
+					FileInfo: FileInfo{
+						FileName: name,
+						Preview:  cachedFile.Preview,
+					},
+					Rank: rank,
+				})
+			}
+		}
 
-	sort.Slice(fileInfos, func(i, j int) bool {
-		return fileInfos[i].FileName > fileInfos[j].FileName
-	})
+		sort.Slice(rankedFiles, func(i, j int) bool {
+			// Sort by rank, then by filename descending for stable sort
+			if rankedFiles[i].Rank != rankedFiles[j].Rank {
+				return rankedFiles[i].Rank < rankedFiles[j].Rank
+			}
+			return rankedFiles[i].FileInfo.FileName > rankedFiles[j].FileInfo.FileName
+		})
+
+		for _, rf := range rankedFiles {
+			fileInfos = append(fileInfos, rf.FileInfo)
+		}
+	}
 
 	data := IndexResponse{Files: fileInfos}
 	w.Header().Set("Content-Type", "application/json")
