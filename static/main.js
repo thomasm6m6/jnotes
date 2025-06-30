@@ -1,11 +1,20 @@
 "use strict";
 
+let originalContent = "";
 const textarea = document.getElementById("textarea");
 const menuBtn = document.getElementById("menu-btn");
 const saveBtn = document.getElementById("save-btn");
 
 menuBtn.addEventListener("click", toggleIndex);
 saveBtn.addEventListener("click", submitFile);
+
+textarea.addEventListener("input", () => {
+  if (textarea.value !== originalContent) {
+    saveBtn.classList.remove("disabled");
+  } else {
+    saveBtn.classList.add("disabled");
+  }
+});
 
 window.addEventListener("load", async function () {
   try {
@@ -63,6 +72,8 @@ async function loadFile(fileName) {
     const date = parseDate(json.fileName);
     header.innerText = formatDate(date);
     textarea.value = json.content;
+    originalContent = json.content;
+    saveBtn.classList.add("disabled");
   } catch (error) {
     console.error(`error loading file: ${error.message}`);
   }
@@ -83,10 +94,12 @@ async function submitFile() {
     if (json.status !== "save scheduled") {
       throw new Error(`Save failed, unexpected status: ${json.status}`);
     }
+    originalContent = text;
   } catch (error) {
     console.error(error.message);
-  } finally {
+    // Re-enable save button on failure to allow retry.
     saveBtn.classList.remove("disabled");
+  } finally {
     saveIcon.classList.remove("fa-spinner", "spinner-anim");
     saveIcon.classList.add("fa-check");
   }
