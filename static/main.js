@@ -34,8 +34,9 @@ window.addEventListener("load", async function () {
 
   window.addEventListener("beforeunload", (e) => {
     if (textarea.value !== originalContent) {
-      e.preventDefault();
-      e.returnValue = "";
+      // Use sendBeacon for reliability on page unload
+      const data = JSON.stringify({ text: textarea.value });
+      navigator.sendBeacon("/save", new Blob([data], { type: 'application/json' }));
     }
   });
 });
@@ -78,9 +79,7 @@ async function fetchIndex() {
 
       li.addEventListener("click", async () => {
         if (textarea.value !== originalContent) {
-          if (!confirm("You have unsaved changes. Are you sure?")) {
-            return;
-          }
+          await submitFile();
         }
         await loadFile(file.fileName);
         history.back();
