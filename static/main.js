@@ -5,7 +5,7 @@ const textarea = document.getElementById("textarea");
 const menuBtn = document.getElementById("menu-btn");
 const saveBtn = document.getElementById("save-btn");
 
-menuBtn.addEventListener("click", toggleIndex);
+menuBtn.addEventListener("click", showIndex);
 saveBtn.addEventListener("click", submitFile);
 
 textarea.addEventListener("input", () => {
@@ -23,11 +23,27 @@ window.addEventListener("load", async function () {
   } catch (error) {
     console.error(`error loading file: ${error.message}`);
   }
+
+  window.addEventListener("popstate", () => {
+    hideIndex();
+  });
+
+  if (location.hash === "#index") {
+    document.getElementById("indexlist").classList.add("show");
+  }
 });
 
-function toggleIndex() {
+function showIndex() {
   const indexlist = document.getElementById("indexlist");
-  indexlist.classList.toggle("show");
+  if (!indexlist.classList.contains("show")) {
+    indexlist.classList.add("show");
+    history.pushState({ indexVisible: true }, "", "#index");
+  }
+}
+
+function hideIndex() {
+  const indexlist = document.getElementById("indexlist");
+  indexlist.classList.remove("show");
 }
 
 async function fetchIndex() {
@@ -55,7 +71,7 @@ async function fetchIndex() {
 
       li.addEventListener("click", async () => {
         await loadFile(file.fileName);
-        toggleIndex(); // Hide index after selection
+        history.back();
       });
       ul.appendChild(li);
     }
