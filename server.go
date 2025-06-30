@@ -265,7 +265,9 @@ func main() {
 
 		for range ticker.C {
 			mu.Lock()
-			gitPull()
+			if out, err := gitPull(); err != nil {
+				log.Printf("'git pull' failed: %s\n%s", err, out)
+			}
 			mu.Unlock()
 		}
 	}()
