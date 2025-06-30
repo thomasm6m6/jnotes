@@ -23,7 +23,17 @@ var (
 	debounceTimer *time.Timer
 	debounceDelay = 10 * time.Second
 	mu      sync.Mutex
+
+	fileCache        = make(map[string]CachedFile)
+	cacheMu          sync.RWMutex
+	TOTAL_SIZE_LIMIT = int64(10 * 1024 * 1024) // 10MB
 )
+
+// CachedFile holds the content and preview of a file for in-memory caching.
+type CachedFile struct {
+	Content string
+	Preview string
+}
 
 type FileResponse struct {
 	FileName string `json:"fileName"`
@@ -59,6 +69,68 @@ func init() {
 	DB_PATH = filepath.Join(wd, "db")
 }
 
+func rebuildCache() error {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+
+	log.Println("Rebuilding file cache...")
+	newCache := make(map[string]CachedFile)
+	var totalSize int64
+
+	files, err := os.ReadDir(DB_PATH)
+	if err != nil {
+		return fmt.Errorf("could not read db dir for cache rebuild: %w", err)
+	}
+
+	re := regexp.MustCompile(`^(\d{8})\.md$`)
+
+	// Sort files to process newest first, to cache most relevant files
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Name() > files[j].Name()
+	})
+
+	for _, file := range files {
+		if !re.MatchString(file.Name()) {
+			continue
+		}
+
+		info, err := file.Info()
+		if err != nil {
+			log.Printf("could not get file info for %s: %v", file.Name(), err)
+			continue
+		}
+
+		if totalSize+info.Size() > TOTAL_SIZE_LIMIT && totalSize > 0 {
+			log.Printf("Cache size limit (%d bytes) reached. Stopping cache population.", TOTAL_SIZE_LIMIT)
+			break
+		}
+
+		content, err := os.ReadFile(filepath.Join(DB_PATH, file.Name()))
+		if err != nil {
+			log.Printf("could not read file %s for cache: %v", file.Name(), err)
+			continue
+		}
+
+		totalSize += info.Size()
+
+		preview := string(content)
+		previewRunes := []rune(preview)
+		if len(previewRunes) > 80 {
+			preview = string(previewRunes[0:80])
+		}
+
+		basename := re.FindStringSubmatch(file.Name())[1]
+		newCache[basename] = CachedFile{
+			Content: string(content),
+			Preview: preview,
+		}
+	}
+
+	fileCache = newCache
+	log.Printf("File cache rebuilt successfully. Cached %d files.", len(fileCache))
+	return nil
+}
+
 func gitPush() (string, error) {
 	return git("push")
 }
@@ -78,6 +150,11 @@ func gitSync() {
 		log.Printf("'git pull' failed: %s\n%s", err, out)
 		return
 	}
+
+	if err := rebuildCache(); err != nil {
+		log.Printf("Failed to rebuild cache after pull: %v", err)
+	}
+
 	if out, err := gitPush(); err != nil {
 		log.Printf("'git push' failed: %s\n%s", err, out)
 	}
@@ -105,39 +182,18 @@ func httpError(w http.ResponseWriter, status int, err error) {
 }
 
 func handleGetIndex(w http.ResponseWriter, r *http.Request) {
-	files, err := os.ReadDir(DB_PATH)
-	if err != nil {
-		httpError(w, http.StatusInternalServerError, fmt.Errorf("could not fetch file list: %w", err))
-		return
-	}
+	cacheMu.RLock()
+	defer cacheMu.RUnlock()
 
 	fileInfos := []FileInfo{}
 	filemap := make(map[string]bool)
-	re := regexp.MustCompile(`^\d{8}\.md$`)
 
-	for _, file := range files {
-		if re.MatchString(file.Name()) {
-			basename, _ := strings.CutSuffix(file.Name(), ".md")
-			filemap[basename] = true
-
-			content, err := os.ReadFile(filepath.Join(DB_PATH, file.Name()))
-			if err != nil {
-				// We can ignore errors here and just show an empty preview.
-				content = []byte{}
-			}
-
-			preview := string(content)
-			previewRunes := []rune(preview)
-			// Truncate to 80 runes for the preview
-			if len(previewRunes) > 80 {
-				preview = string(previewRunes[0:80])
-			}
-
-			fileInfos = append(fileInfos, FileInfo{
-				FileName: basename,
-				Preview:  preview,
-			})
-		}
+	for name, cachedFile := range fileCache {
+		filemap[name] = true
+		fileInfos = append(fileInfos, FileInfo{
+			FileName: name,
+			Preview:  cachedFile.Preview,
+		})
 	}
 
 	today := time.Now().Format("20060102")
@@ -175,18 +231,19 @@ func handleGetFile(w http.ResponseWriter, r *http.Request) {
 		name = time.Now().Format("20060102")
 	}
 
-	data, err := os.ReadFile(filepath.Join(DB_PATH, name+".md"))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		fmt.Println("here 3")
-		httpError(w, http.StatusInternalServerError,
-			fmt.Errorf("error reading file '%s': %s", name, err))
-		return
+	cacheMu.RLock()
+	cachedFile, exists := fileCache[name]
+	cacheMu.RUnlock()
+
+	var content string
+	if exists {
+		content = cachedFile.Content
 	}
 
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(FileResponse{
 		FileName: name,
-		Content:  string(data),
+		Content:  content,
 	})
 }
 
@@ -227,6 +284,20 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Update cache for the saved file.
+	basename, _ := strings.CutSuffix(fileName, ".md")
+	preview := req.Text
+	previewRunes := []rune(preview)
+	if len(previewRunes) > 80 {
+		preview = string(previewRunes[0:80])
+	}
+	cacheMu.Lock()
+	fileCache[basename] = CachedFile{
+		Content: req.Text,
+		Preview: preview,
+	}
+	cacheMu.Unlock()
+
 	debounceSync()
 
 	_ = json.NewEncoder(w).Encode(SaveResponse{Status: "save scheduled"})
@@ -252,6 +323,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := rebuildCache(); err != nil {
+		log.Fatalf("Failed to build initial file cache: %v", err)
+	}
+
 	http.HandleFunc("/getindex", handleGetIndex)
 	http.HandleFunc("/getfile", handleGetFile)
 	http.HandleFunc("/save", handleSave)
@@ -267,6 +342,10 @@ func main() {
 			mu.Lock()
 			if out, err := gitPull(); err != nil {
 				log.Printf("'git pull' failed: %s\n%s", err, out)
+			} else {
+				if err := rebuildCache(); err != nil {
+					log.Printf("Failed to rebuild cache after periodic pull: %v", err)
+				}
 			}
 			mu.Unlock()
 		}
