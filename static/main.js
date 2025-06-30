@@ -66,6 +66,9 @@ async function router() {
         searchInput.value = query;
     }
     await fetchIndex(query);
+    if (history.state && history.state.scrollPosition) {
+        document.getElementById('indexlist').scrollTop = history.state.scrollPosition;
+    }
   } else {
     hideIndex();
     await loadFile(note);
@@ -100,6 +103,10 @@ async function fetchIndex(query = "") {
         if (textarea.value !== originalContent) {
           await submitFile();
         }
+        const indexList = document.getElementById('indexlist');
+        const currentState = history.state || {};
+        history.replaceState({ ...currentState, scrollPosition: indexList.scrollTop }, '', window.location.href);
+
         const noteUrl = `/?note=${file.fileName}`;
         history.pushState({ page: 'note', fileName: file.fileName }, '', noteUrl);
         router();
