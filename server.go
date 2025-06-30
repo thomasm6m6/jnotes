@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lithammer/fuzzysearch"
+	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
 var (
@@ -220,7 +220,7 @@ func handleGetIndex(w http.ResponseWriter, r *http.Request) {
 			if cachedFile.Content == "" {
 				continue
 			}
-			rank := fuzzysearch.RankMatch(query, cachedFile.Content)
+			rank := fuzzy.RankMatch(query, cachedFile.Content)
 			if rank != -1 {
 				rankedFiles = append(rankedFiles, rankedFile{
 					FileInfo: FileInfo{
