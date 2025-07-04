@@ -68,22 +68,25 @@ window.addEventListener("load", async function () {
 
   window.addEventListener("keydown", (e) => {
     const viewer = document.getElementById("image-viewer");
-    if (viewer.style.display !== "flex") {
-      return;
-    }
+    const indexlist = document.getElementById("indexlist");
 
-    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-      e.preventDefault();
-      if (currentNoteInfo.attachmentCount <= 1) return;
+    if (viewer.style.display === "flex") {
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        if (currentNoteInfo.attachmentCount <= 1) return;
 
-      if (e.key === "ArrowDown") {
-        currentNoteInfo.currentIndex = (currentNoteInfo.currentIndex + 1) % currentNoteInfo.attachmentCount;
-      } else { // ArrowUp
-        currentNoteInfo.currentIndex = (currentNoteInfo.currentIndex - 1 + currentNoteInfo.attachmentCount) % currentNoteInfo.attachmentCount;
+        if (e.key === "ArrowDown") {
+          currentNoteInfo.currentIndex = (currentNoteInfo.currentIndex + 1) % currentNoteInfo.attachmentCount;
+        } else { // ArrowUp
+          currentNoteInfo.currentIndex = (currentNoteInfo.currentIndex - 1 + currentNoteInfo.attachmentCount) % currentNoteInfo.attachmentCount;
+        }
+
+        const viewerImg = viewer.querySelector(".viewer-content");
+        viewerImg.src = `/getattachment?note=${currentNoteInfo.fileName}&index=${currentNoteInfo.currentIndex}`;
       }
-
-      const viewerImg = viewer.querySelector(".viewer-content");
-      viewerImg.src = `/getattachment?note=${currentNoteInfo.fileName}&index=${currentNoteInfo.currentIndex}`;
+    } else if (e.key === "Escape" && indexlist.classList.contains("show")) {
+      e.preventDefault();
+      history.back();
     }
   });
 });
