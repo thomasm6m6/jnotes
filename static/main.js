@@ -50,6 +50,16 @@ window.addEventListener("load", async function () {
   });
 
   await router();
+
+  const viewer = document.getElementById("image-viewer");
+  viewer.addEventListener("click", (e) => {
+    // Close if the background or the close button is clicked.
+    if (e.target === viewer || e.target.classList.contains('close-viewer')) {
+      viewer.style.display = "none";
+      // Clear src to stop loading if in progress
+      viewer.querySelector(".viewer-content").src = "";
+    }
+  });
 });
 
 window.addEventListener("popstate", router);
@@ -156,7 +166,10 @@ async function loadFile(fileName) {
         const thumb = document.createElement("img");
         thumb.src = `/db/${json.fileName}/thumbnails/${i}.png`;
         thumb.addEventListener("click", () => {
-          window.open(`/getattachment?note=${json.fileName}&index=${i}`, "_blank");
+          const viewer = document.getElementById("image-viewer");
+          const viewerImg = viewer.querySelector(".viewer-content");
+          viewerImg.src = `/getattachment?note=${json.fileName}&index=${i}`;
+          viewer.style.display = "flex";
         });
         attachmentGutter.appendChild(thumb);
       }
