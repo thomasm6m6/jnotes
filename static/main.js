@@ -1,22 +1,25 @@
 "use strict";
 
 let originalContent = "";
-const textarea = document.getElementById("textarea");
-const menuBtn = document.getElementById("menu-btn");
-const saveBtn = document.getElementById("save-btn");
-
-menuBtn.addEventListener("click", showIndex);
-saveBtn.addEventListener("click", submitFile);
-
-textarea.addEventListener("input", () => {
-  if (textarea.value !== originalContent) {
-    saveBtn.classList.remove("disabled");
-  } else {
-    saveBtn.classList.add("disabled");
-  }
-});
+let textarea, menuBtn, saveBtn, header;
 
 window.addEventListener("load", async function () {
+  textarea = document.getElementById("textarea");
+  menuBtn = document.getElementById("menu-btn");
+  saveBtn = document.getElementById("save-btn");
+  header = document.getElementById("header");
+
+  menuBtn.addEventListener("click", showIndex);
+  saveBtn.addEventListener("click", submitFile);
+
+  textarea.addEventListener("input", () => {
+    if (textarea.value !== originalContent) {
+      saveBtn.classList.remove("disabled");
+    } else {
+      saveBtn.classList.add("disabled");
+    }
+  });
+
   // Initial setup, and then router takes over.
   window.addEventListener("beforeunload", (e) => {
     if (textarea.value !== originalContent) {
