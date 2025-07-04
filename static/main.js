@@ -20,6 +20,15 @@ window.addEventListener("load", async function () {
     }
   });
 
+  textarea.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      if (textarea.value !== originalContent) { // Only save if there are changes
+        submitFile();
+      }
+    }
+  });
+
   // Initial setup, and then router takes over.
   window.addEventListener("beforeunload", (e) => {
     if (textarea.value !== originalContent) {
