@@ -2,6 +2,11 @@
 
 let originalContent = "";
 let textarea, menuBtn, saveBtn, header;
+let currentNoteInfo = {
+  fileName: null,
+  attachmentCount: 0,
+  currentIndex: -1
+};
 
 window.addEventListener("load", async function () {
   textarea = document.getElementById("textarea");
@@ -58,6 +63,27 @@ window.addEventListener("load", async function () {
       viewer.style.display = "none";
       // Clear src to stop loading if in progress
       viewer.querySelector(".viewer-content").src = "";
+    }
+  });
+
+  window.addEventListener("keydown", (e) => {
+    const viewer = document.getElementById("image-viewer");
+    if (viewer.style.display !== "flex") {
+      return;
+    }
+
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      if (currentNoteInfo.attachmentCount <= 1) return;
+
+      if (e.key === "ArrowDown") {
+        currentNoteInfo.currentIndex = (currentNoteInfo.currentIndex + 1) % currentNoteInfo.attachmentCount;
+      } else { // ArrowUp
+        currentNoteInfo.currentIndex = (currentNoteInfo.currentIndex - 1 + currentNoteInfo.attachmentCount) % currentNoteInfo.attachmentCount;
+      }
+
+      const viewerImg = viewer.querySelector(".viewer-content");
+      viewerImg.src = `/getattachment?note=${currentNoteInfo.fileName}&index=${currentNoteInfo.currentIndex}`;
     }
   });
 });
@@ -151,10 +177,13 @@ async function fetchIndex(query = "") {
 async function loadFile(fileName) {
   const attachmentGutter = document.getElementById("attachment-gutter");
   attachmentGutter.innerHTML = "";
+  currentNoteInfo = { fileName: null, attachmentCount: 0, currentIndex: -1 };
 
   try {
     const url = fileName ? `/getfile?name=${fileName}` : "/getfile";
     const json = await doFetch(url);
+    currentNoteInfo.fileName = json.fileName;
+    currentNoteInfo.attachmentCount = json.attachmentCount;
     const date = parseDate(json.fileName);
     header.innerText = formatDate(date);
     textarea.value = json.content;
@@ -166,9 +195,10 @@ async function loadFile(fileName) {
         const thumb = document.createElement("img");
         thumb.src = `/db/${json.fileName}/thumbnails/${i}.png`;
         thumb.addEventListener("click", () => {
+          currentNoteInfo.currentIndex = i;
           const viewer = document.getElementById("image-viewer");
           const viewerImg = viewer.querySelector(".viewer-content");
-          viewerImg.src = `/getattachment?note=${json.fileName}&index=${i}`;
+          viewerImg.src = `/getattachment?note=${currentNoteInfo.fileName}&index=${currentNoteInfo.currentIndex}`;
           viewer.style.display = "flex";
         });
         attachmentGutter.appendChild(thumb);
