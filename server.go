@@ -55,7 +55,8 @@ type IndexResponse struct {
 }
 
 type SaveRequest struct {
-	Text string `json:"text"`
+	FileName string `json:"fileName"`
+	Text     string `json:"text"`
 }
 
 type SaveResponse struct {
@@ -324,7 +325,11 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dateStr := time.Now().Format("20060102")
+	dateStr := req.FileName
+	if !regexp.MustCompile(`^\d{8}$`).MatchString(dateStr) {
+		httpError(w, http.StatusBadRequest, errors.New("invalid or missing fileName in save request"))
+		return
+	}
 	dirPath := filepath.Join(DB_PATH, dateStr)
 	if err := os.MkdirAll(dirPath, 0755); err != nil {
 		httpError(w, http.StatusInternalServerError, fmt.Errorf("could not create directory: %w", err))
@@ -360,10 +365,13 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 		preview = string(previewRunes[0:80])
 	}
 	cacheMu.Lock()
-	fileCache[basename] = CachedFile{
-		Content: req.Text,
-		Preview: preview,
+	cached, exists := fileCache[basename]
+	if !exists {
+		cached = CachedFile{}
 	}
+	cached.Content = req.Text
+	cached.Preview = preview
+	fileCache[basename] = cached
 	cacheMu.Unlock()
 
 	debounceSync()

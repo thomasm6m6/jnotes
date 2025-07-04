@@ -37,7 +37,7 @@ window.addEventListener("load", async function () {
   // Initial setup, and then router takes over.
   window.addEventListener("beforeunload", (e) => {
     if (textarea.value !== originalContent) {
-      const data = JSON.stringify({ text: textarea.value });
+      const data = JSON.stringify({ text: textarea.value, fileName: currentNoteInfo.fileName });
       navigator.sendBeacon("/save", new Blob([data], { type: 'application/json' }));
     }
   });
@@ -219,7 +219,7 @@ async function submitFile() {
   try {
     const json = await doFetch("/save", {
       method: "POST",
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, fileName: currentNoteInfo.fileName }),
     });
     if (json.status !== "save scheduled") {
       throw new Error(`Save failed, unexpected status: ${json.status}`);
