@@ -104,6 +104,13 @@ async function fetchIndex(query = "") {
       titleSpan.className = "index-entry-title";
       titleSpan.textContent = formattedDate;
 
+      if (file.attachmentCount > 0) {
+        const attachmentSpan = document.createElement("span");
+        attachmentSpan.className = "index-entry-attachments";
+        attachmentSpan.textContent = `${file.attachmentCount} 📎`;
+        titleSpan.appendChild(attachmentSpan);
+      }
+
       const previewSpan = document.createElement("small");
       previewSpan.className = "index-entry-preview";
       previewSpan.textContent = file.preview;
@@ -132,6 +139,9 @@ async function fetchIndex(query = "") {
 }
 
 async function loadFile(fileName) {
+  const attachmentGutter = document.getElementById("attachment-gutter");
+  attachmentGutter.innerHTML = "";
+
   try {
     const url = fileName ? `/getfile?name=${fileName}` : "/getfile";
     const json = await doFetch(url);
@@ -140,6 +150,17 @@ async function loadFile(fileName) {
     textarea.value = json.content;
     originalContent = json.content;
     saveBtn.classList.add("disabled");
+
+    if (json.attachmentCount > 0) {
+      for (let i = 0; i < json.attachmentCount; i++) {
+        const thumb = document.createElement("img");
+        thumb.src = `/db/${json.fileName}/thumbnails/${i}.png`;
+        thumb.addEventListener("click", () => {
+          window.open(`/getattachment?note=${json.fileName}&index=${i}`, "_blank");
+        });
+        attachmentGutter.appendChild(thumb);
+      }
+    }
   } catch (error) {
     console.error(`error loading file: ${error.message}`);
   }

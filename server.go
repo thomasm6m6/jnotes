@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,18 +33,21 @@ var (
 
 // CachedFile holds the content and preview of a file for in-memory caching.
 type CachedFile struct {
-	Content string
-	Preview string
+	Content         string
+	Preview         string
+	AttachmentCount int
 }
 
 type FileResponse struct {
-	FileName string `json:"fileName"`
-	Content  string `json:"content"`
+	FileName        string `json:"fileName"`
+	Content         string `json:"content"`
+	AttachmentCount int    `json:"attachmentCount"`
 }
 
 type FileInfo struct {
-	FileName string `json:"fileName"`
-	Preview  string `json:"preview"`
+	FileName        string `json:"fileName"`
+	Preview         string `json:"preview"`
+	AttachmentCount int    `json:"attachmentCount"`
 }
 
 type IndexResponse struct {
@@ -123,10 +127,21 @@ func rebuildCache() error {
 			preview = string(previewRunes[0:80])
 		}
 
+		attachmentCount := 0
+		filesDir := filepath.Join(DB_PATH, dir.Name(), "files")
+		if f, err := os.Stat(filesDir); err == nil && f.IsDir() {
+			if entries, err := os.ReadDir(filesDir); err == nil {
+				attachmentCount = len(entries)
+			} else {
+				log.Printf("could not read files dir for counting %s: %v", filesDir, err)
+			}
+		}
+
 		basename := dir.Name()
 		newCache[basename] = CachedFile{
-			Content: string(content),
-			Preview: preview,
+			Content:         string(content),
+			Preview:         preview,
+			AttachmentCount: attachmentCount,
 		}
 	}
 
@@ -198,14 +213,15 @@ func handleGetIndex(w http.ResponseWriter, r *http.Request) {
 		for name, cachedFile := range fileCache {
 			filemap[name] = true
 			fileInfos = append(fileInfos, FileInfo{
-				FileName: name,
-				Preview:  cachedFile.Preview,
+				FileName:        name,
+				Preview:         cachedFile.Preview,
+				AttachmentCount: cachedFile.AttachmentCount,
 			})
 		}
 
 		today := time.Now().Format("20060102")
 		if _, exists := filemap[today]; !exists {
-			fileInfos = append(fileInfos, FileInfo{FileName: today, Preview: ""})
+			fileInfos = append(fileInfos, FileInfo{FileName: today, Preview: "", AttachmentCount: 0})
 		}
 
 		sort.Slice(fileInfos, func(i, j int) bool {
@@ -227,8 +243,9 @@ func handleGetIndex(w http.ResponseWriter, r *http.Request) {
 			if rank != -1 {
 				rankedFiles = append(rankedFiles, rankedFile{
 					FileInfo: FileInfo{
-						FileName: name,
-						Preview:  cachedFile.Preview,
+						FileName:        name,
+						Preview:         cachedFile.Preview,
+						AttachmentCount: cachedFile.AttachmentCount,
 					},
 					Rank: rank,
 				})
@@ -279,14 +296,17 @@ func handleGetFile(w http.ResponseWriter, r *http.Request) {
 	cacheMu.RUnlock()
 
 	var content string
+	var attachmentCount int
 	if exists {
 		content = cachedFile.Content
+		attachmentCount = cachedFile.AttachmentCount
 	}
 
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(FileResponse{
-		FileName: name,
-		Content:  content,
+		FileName:        name,
+		Content:         content,
+		AttachmentCount: attachmentCount,
 	})
 }
 
@@ -351,6 +371,48 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(SaveResponse{Status: "save scheduled"})
 }
 
+func handleGetAttachment(w http.ResponseWriter, r *http.Request) {
+	noteName := r.URL.Query().Get("note")
+	index := r.URL.Query().Get("index")
+	if noteName == "" || index == "" {
+		httpError(w, http.StatusBadRequest, errors.New("missing note or index"))
+		return
+	}
+
+	if !regexp.MustCompile(`^\d{8}$`).MatchString(noteName) {
+		httpError(w, http.StatusBadRequest, errors.New("invalid note name"))
+		return
+	}
+
+	filesDir := filepath.Join(DB_PATH, noteName, "files")
+	entries, err := os.ReadDir(filesDir)
+	if err != nil {
+		httpError(w, http.StatusNotFound, fmt.Errorf("attachments not found: %w", err))
+		return
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		iName := strings.TrimSuffix(entries[i].Name(), filepath.Ext(entries[i].Name()))
+		jName := strings.TrimSuffix(entries[j].Name(), filepath.Ext(entries[j].Name()))
+		iVal, errI := strconv.Atoi(iName)
+		jVal, errJ := strconv.Atoi(jName)
+		if errI != nil || errJ != nil {
+			return entries[i].Name() < entries[j].Name()
+		}
+		return iVal < jVal
+	})
+
+	indexInt, err := strconv.Atoi(index)
+	if err != nil || indexInt < 0 || indexInt >= len(entries) {
+		httpError(w, http.StatusBadRequest, errors.New("invalid index"))
+		return
+	}
+
+	fileName := entries[indexInt].Name()
+	redirectURL := fmt.Sprintf("/db/%s/files/%s", noteName, fileName)
+	http.Redirect(w, r, redirectURL, http.StatusFound)
+}
+
 func git(cmd string) (string, error) {
 	args := strings.Fields(cmd)
 	fullArgs := append([]string{"-C", DB_PATH}, args...)
@@ -378,9 +440,13 @@ func main() {
 	http.HandleFunc("/getindex", handleGetIndex)
 	http.HandleFunc("/getfile", handleGetFile)
 	http.HandleFunc("/save", handleSave)
+	http.HandleFunc("/getattachment", handleGetAttachment)
 
 	fs := http.FileServer(http.Dir("static"))
 	http.Handle("/", fs)
+
+	dbfs := http.FileServer(http.Dir(DB_PATH))
+	http.Handle("/db/", http.StripPrefix("/db/", dbfs))
 
 	go func() {
 		ticker := time.NewTicker(300 * time.Second)
