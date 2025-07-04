@@ -78,26 +78,29 @@ func rebuildCache() error {
 	newCache := make(map[string]CachedFile)
 	var totalSize int64
 
-	files, err := os.ReadDir(DB_PATH)
+	dirs, err := os.ReadDir(DB_PATH)
 	if err != nil {
 		return fmt.Errorf("could not read db dir for cache rebuild: %w", err)
 	}
 
-	re := regexp.MustCompile(`^(\d{8})\.md$`)
+	re := regexp.MustCompile(`^\d{8}$`)
 
-	// Sort files to process newest first, to cache most relevant files
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].Name() > files[j].Name()
+	// Sort dirs to process newest first, to cache most relevant files
+	sort.Slice(dirs, func(i, j int) bool {
+		return dirs[i].Name() > dirs[j].Name()
 	})
 
-	for _, file := range files {
-		if !re.MatchString(file.Name()) {
+	for _, dir := range dirs {
+		if !dir.IsDir() || !re.MatchString(dir.Name()) {
 			continue
 		}
 
-		info, err := file.Info()
+		notePath := filepath.Join(DB_PATH, dir.Name(), "notes.md")
+		info, err := os.Stat(notePath)
 		if err != nil {
-			log.Printf("could not get file info for %s: %v", file.Name(), err)
+			if !os.IsNotExist(err) {
+				log.Printf("could not get file info for %s: %v", notePath, err)
+			}
 			continue
 		}
 
@@ -106,9 +109,9 @@ func rebuildCache() error {
 			break
 		}
 
-		content, err := os.ReadFile(filepath.Join(DB_PATH, file.Name()))
+		content, err := os.ReadFile(notePath)
 		if err != nil {
-			log.Printf("could not read file %s for cache: %v", file.Name(), err)
+			log.Printf("could not read file %s for cache: %v", notePath, err)
 			continue
 		}
 
@@ -120,7 +123,7 @@ func rebuildCache() error {
 			preview = string(previewRunes[0:80])
 		}
 
-		basename := re.FindStringSubmatch(file.Name())[1]
+		basename := dir.Name()
 		newCache[basename] = CachedFile{
 			Content: string(content),
 			Preview: preview,
@@ -301,8 +304,13 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fileName := time.Now().Format("20060102") + ".md"
-	filePath := filepath.Join(DB_PATH, fileName)
+	dateStr := time.Now().Format("20060102")
+	dirPath := filepath.Join(DB_PATH, dateStr)
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Errorf("could not create directory: %w", err))
+		return
+	}
+	filePath := filepath.Join(dirPath, "notes.md")
 	if err := os.WriteFile(filePath, []byte(req.Text), 0644); err != nil {
 		httpError(w, http.StatusInternalServerError, fmt.Errorf("could not write file: %w", err))
 		return
@@ -325,7 +333,7 @@ func handleSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update cache for the saved file.
-	basename, _ := strings.CutSuffix(fileName, ".md")
+	basename := dateStr
 	preview := req.Text
 	previewRunes := []rune(preview)
 	if len(previewRunes) > 80 {
